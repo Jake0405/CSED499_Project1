@@ -25,7 +25,8 @@ struct Edge {
 
 // Yao 그래프를 나타내는 구조체
 struct YaoGraph {
-    int coneCount;
+    int coneCount;         // # of cones for each point (=k)
+    int stretchFactor = INT_MIN;
     vector<Point> points; // 그래프의 모든 점들
     vector<vector<Edge>> adj_list; // 인접 리스트
     priority_queue<pair<double, int>, vector<pair<double, int>>, greater<pair<double, int>>> targetPoints;
@@ -83,10 +84,13 @@ unordered_map<int, double> computeShortestPaths(YaoGraph& G, int P, double angle
 
             // cone ray 내부에 있는 점들만 고려
             if (angle_diff >= -180 / G.coneCount && angle_diff < 180 / G.coneCount) {
-                G.targetPoints.push({angle_diff, next_point});
                 if (shortest_paths[current_point] + weight < shortest_paths[next_point]) {
+                    G.targetPoints.push({angle_diff, next_point});
                     shortest_paths[next_point] = shortest_paths[current_point] + weight;
                     pq.push({shortest_paths[next_point], next_point});
+
+                    if (G.stretchFactor > shortest_paths[next_point] / distance(P, next_point))
+                        G.stretchFactor = shortest_paths[next_point] / distance(P, next_point);
                 }
             }
         }
@@ -101,7 +105,7 @@ void rotateYaoGraph(YaoGraph& G, int P, double rightRayAngle, double rotate) {
 
     while (current_angle < rightRayAngle + 360 / G.coneCount) {
         while (!G.targetPoints.empty()) {
-            auto [angle, target_point] = G.targetPoints.top().second;
+            auto [angle, target_point] = G.targetPoints.top();
             double angle_diff = computeAngleDifference(angle + rightRayAngle, current_angle);
 
             if (angle_diff >= rotate / 2)

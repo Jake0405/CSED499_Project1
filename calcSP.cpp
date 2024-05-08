@@ -1,3 +1,4 @@
+#define _USE_MATH_DEFINES
 #include <iostream>
 #include <vector>
 #include <queue>
@@ -25,11 +26,11 @@ struct Edge {
 
 // Yao 그래프를 나타내는 구조체
 struct YaoGraph {
-    int coneCount;         // # of cones for each point (=k)
+    int coneCount = 0;         // # of cones for each point (=k)
     int stretchFactor = INT_MIN;
-    vector<Point> points; // 그래프의 모든 점들
+    vector<Point> points = {}; // 그래프의 모든 점들
     vector<vector<Edge>> adj_list; // 인접 리스트
-    priority_queue<pair<double, int>, vector<pair<double, int>>, greater<pair<double, int>>> targetPoints;
+    priority_queue<pair<double, int>, vector<pair<double, int>>, greater<pair<double, int>>> targetPoints = {};
 
     YaoGraph(int n) : adj_list(n) {} // 점의 수 n으로 그래프 초기화
 };
@@ -61,15 +62,16 @@ void initializeShortestPaths(unordered_map<int, double>& shortest_paths, int P) 
     shortest_paths[P] = 0;
 }
 
-// Dijkstra 알고리즘을 이용하여 최단 경로를 계산하는 함수
+// Dijkstra 알고리즘을 이용하여 최단 경로 및 stretch factor를 계산하는 함수
 unordered_map<int, double> computeShortestPaths(YaoGraph& G, int P, double angle) {
     unordered_map<int, double> shortest_paths;
     initializeShortestPaths(shortest_paths, P);
     priority_queue<pair<double, int>, vector<pair<double, int>>, greater<pair<double, int>>> pq;
-    pq.push({0, P});
+    pq.push({ 0, P });
 
     while (!pq.empty()) {
-        auto [dist, current_point] = pq.top();
+        double dist = pq.top().first;
+        int current_point = pq.top().second;
         pq.pop();
 
         for (const auto& edge : G.adj_list[current_point]) {
@@ -85,12 +87,12 @@ unordered_map<int, double> computeShortestPaths(YaoGraph& G, int P, double angle
             // cone ray 내부에 있는 점들만 고려
             if (angle_diff >= -180 / G.coneCount && angle_diff < 180 / G.coneCount) {
                 if (shortest_paths[current_point] + weight < shortest_paths[next_point]) {
-                    G.targetPoints.push({angle_diff, next_point});
+                    G.targetPoints.push({ angle_diff, next_point });
                     shortest_paths[next_point] = shortest_paths[current_point] + weight;
-                    pq.push({shortest_paths[next_point], next_point});
+                    pq.push({ shortest_paths[next_point], next_point });
 
-                    if (G.stretchFactor > shortest_paths[next_point] / distance(P, next_point))
-                        G.stretchFactor = shortest_paths[next_point] / distance(P, next_point);
+                    if (G.stretchFactor > shortest_paths[next_point] / distance(G.points[P], G.points[next_point]))
+                        G.stretchFactor = int(shortest_paths[next_point] / distance(G.points[P], G.points[next_point]));
                 }
             }
         }
@@ -99,13 +101,15 @@ unordered_map<int, double> computeShortestPaths(YaoGraph& G, int P, double angle
     return shortest_paths;
 }
 
+// Yao Graph의 ray를 회전하며 stretch factor를 매번 계산하는 함수
 void rotateYaoGraph(YaoGraph& G, int P, double rightRayAngle, double rotate) {
     double current_angle = rightRayAngle;
     unordered_map<int, double> shortest_paths;
 
     while (current_angle < rightRayAngle + 360 / G.coneCount) {
         while (!G.targetPoints.empty()) {
-            auto [angle, target_point] = G.targetPoints.top();
+            double angle = G.targetPoints.top().first;
+            int target_point = G.targetPoints.top().second;
             double angle_diff = computeAngleDifference(angle + rightRayAngle, current_angle);
 
             if (angle_diff >= rotate / 2)
@@ -121,6 +125,7 @@ void rotateYaoGraph(YaoGraph& G, int P, double rightRayAngle, double rotate) {
     }
 }
 
+// Yao Graph에 새로운 점을 추가하는 함수 (점의 삭제와 독립적이라 가정)
 void insertion(YaoGraph& G, double x, double y, vector<Edge> adjList) {
     int curPoint = G.points.size();
     G.points.push_back(Point(x, y));

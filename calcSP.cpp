@@ -120,3 +120,10 @@ void rotateYaoGraph(YaoGraph& G, int P, double rightRayAngle, double rotate) {
         current_angle += rotate;
     }
 }
+
+void insertion(YaoGraph& G, double x, double y, vector<Edge> adjList) {
+    int curPoint = G.points.size();
+    G.points.push_back(Point(x, y));
+    for (auto it : adjList)
+        G.adj_list[curPoint].insert(G.adj_list[curPoint].end(), adjList.begin(), adjList.end());
+}

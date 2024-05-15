@@ -83,9 +83,6 @@ unordered_map<int, double> computeShortestPaths(YaoGraph& G, int P, double angle
             int next_point = edge.dest;
             double weight = edge.weight;
 
-            double relative_angle = computeRelativeAngle(G.points[0], G.points[next_point]);
-            double angle_diff = computeAngleDifference(angle, relative_angle);
-
             // cone ray 내부에 있는 점들만 고려
             if (find(G.targets.begin(), G.targets.end(), next_point) != G.targets.end()) {
                 if (shortest_paths[current_point] + weight < shortest_paths[next_point]) {
@@ -111,10 +108,11 @@ void rotateYaoGraph(YaoGraph& G, double rightRayAngle, double rotate) {
     while (current_angle < rightRayAngle + 360 / G.coneCount) {
         // 해당 영역 안의 점들을 PQ에 삽입
         G.targetPoints = {};
+        G.targets = {};
         G.stretchFactor = -1;
         for (int cur = 1; cur < G.pointCount; cur++) {
             double relative_angle = computeRelativeAngle(G.points[0], G.points[cur]);
-            double angle_diff = abs(current_angle - relative_angle);
+            double angle_diff = relative_angle - current_angle;
 
             if (angle_diff >= 0 && angle_diff < 360 / G.coneCount) {
                 G.targetPoints.push(make_pair(angle_diff, cur));
@@ -124,22 +122,6 @@ void rotateYaoGraph(YaoGraph& G, double rightRayAngle, double rotate) {
 
         for (int i = 0; i < G.targets.size(); i++)
             shortest_paths = computeShortestPaths(G, G.targets[i], current_angle);
-
-        /*
-        while (!G.targetPoints.empty()) {
-            double angle = G.targetPoints.top().first;
-            int target_point = G.targetPoints.top().second;
-            double angle_diff = computeAngleDifference(angle + rightRayAngle, current_angle);
-
-            if (angle_diff >= rotate / 2)
-                break;
-
-            G.targetPoints.pop();
-            G.points[target_point].isValid = 0;
-
-            shortest_paths = computeShortestPaths(G, P, rightRayAngle);
-        }
-        */
 
         printf("Stretch Factor with reference angle %f: %f\n", current_angle, G.stretchFactor);
         current_angle += rotate;

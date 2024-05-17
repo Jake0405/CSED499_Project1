@@ -32,10 +32,8 @@ struct YaoGraph {
     double stretchFactor = -1;
     vector<Point> points = {}; // 그래프의 모든 점들
     vector<vector<Edge>> adj_list = {}; // 인접 리스트
-    priority_queue<pair<double, int>, vector<pair<double, int>>, greater<pair<double, int>>> targetPoints = {};
-    vector<int> targets = {};
 
-    YaoGraph(int n, int k) : pointCount(n + 1), adj_list(n + 4), coneCount(k) {} // 점의 수 n으로 그래프 초기화
+    YaoGraph(int n, int k) : pointCount(n), adj_list(n), coneCount(k) {} // 점의 수 n으로 그래프 초기화
 };
 
 // 두 점 사이의 거리를 계산하는 함수
@@ -60,9 +58,9 @@ double computeAngleDifference(double angle1, double angle2) {
 }
 
 // shortest_paths[P] = 0으로 초기화하고, 나머지는 무한대로 설정하는 함수
-void initializeShortestPaths(unordered_map<int, double>& shortest_paths, int P) {
+void initializeShortestPaths(YaoGraph& G, unordered_map<int, double>& shortest_paths, int P) {
     shortest_paths.clear();
-    for (int i = 0; i <= 10; i++)
+    for (int i = 0; i < G.pointCount; i++)
         shortest_paths[i] = 9999999;
     shortest_paths[P] = 0;
 }
@@ -70,7 +68,7 @@ void initializeShortestPaths(unordered_map<int, double>& shortest_paths, int P) 
 // Dijkstra 알고리즘을 이용하여 최단 경로 및 stretch factor를 계산하는 함수
 unordered_map<int, double> computeShortestPaths(YaoGraph& G, int P, double angle) {
     unordered_map<int, double> shortest_paths;
-    initializeShortestPaths(shortest_paths, P);
+    initializeShortestPaths(G, shortest_paths, P);
     priority_queue<pair<double, int>, vector<pair<double, int>>, greater<pair<double, int>>> pq;
     pq.push({ 0, P });
 
@@ -83,21 +81,40 @@ unordered_map<int, double> computeShortestPaths(YaoGraph& G, int P, double angle
             int next_point = edge.dest;
             double weight = edge.weight;
 
-            // cone ray 내부에 있는 점들만 고려
-            if (find(G.targets.begin(), G.targets.end(), next_point) != G.targets.end()) {
-                if (shortest_paths[current_point] + weight < shortest_paths[next_point]) {
-                    shortest_paths[next_point] = shortest_paths[current_point] + weight;
-                    pq.push({ shortest_paths[next_point], next_point });
+            if (shortest_paths[current_point] + weight < shortest_paths[next_point]) {
+                shortest_paths[next_point] = shortest_paths[current_point] + weight;
+                pq.push({ shortest_paths[next_point], next_point });
 
-                    if (G.stretchFactor < shortest_paths[next_point] / distance(G.points[P], G.points[next_point]))
-                        G.stretchFactor = shortest_paths[next_point] / distance(G.points[P], G.points[next_point]);
-                }
-
+                G.stretchFactor = max(G.stretchFactor, shortest_paths[next_point] / distance(G.points[P], G.points[next_point]));
             }
         }
     }
 
     return shortest_paths;
+}
+
+int insert(YaoGraph& G, int centerPoint, double rightRayAngle) {
+    double minDist = 9999999;
+    double minPoint = -1;
+    for (int curPoint = 0; curPoint < G.pointCount; curPoint++) {
+        if (centerPoint == curPoint)
+            continue;
+
+        double relative_angle = computeRelativeAngle(G.points[centerPoint], G.points[curPoint]);
+        if (relative_angle < rightRayAngle)
+            relative_angle += rightRayAngle;
+
+        double angle_diff = relative_angle - rightRayAngle;
+
+        if (angle_diff >= 0 && angle_diff < 360 / G.coneCount) {
+            double dist = distance(G.points[centerPoint], G.points[curPoint]);
+            if (minDist > dist) {
+                minDist = dist;
+                minPoint = curPoint;
+            }
+        }
+    }
+    return minPoint;
 }
 
 // Yao Graph의 ray를 회전하며 stretch factor를 매번 계산하는 함수
@@ -107,21 +124,34 @@ void rotateYaoGraph(YaoGraph& G, double rightRayAngle, double rotate) {
 
     while (current_angle < rightRayAngle + 360 / G.coneCount) {
         // 해당 영역 안의 점들을 PQ에 삽입
-        G.targetPoints = {};
-        G.targets = {};
-        G.stretchFactor = -1;
-        for (int cur = 1; cur < G.pointCount; cur++) {
-            double relative_angle = computeRelativeAngle(G.points[0], G.points[cur]);
-            double angle_diff = relative_angle - current_angle;
+        // memset(G.adjList, 0, sizeof(G.adjList));
+        for (int point = 0; point < G.pointCount; point++)
+            G.adj_list[point].clear();
 
-            if (angle_diff >= 0 && angle_diff < 360 / G.coneCount) {
-                G.targetPoints.push(make_pair(angle_diff, cur));
-                G.targets.push_back(cur);
+        for (int curPoint = 0; curPoint < G.pointCount; curPoint++) {
+            // vector<Edge> adjList;
+            // 각각의 cone마다 가장 가까운 점을 edge로 잇는 작업
+            for (int rightAngle = current_angle; rightAngle < 360 + current_angle; rightAngle += 360 / G.coneCount) {
+                int destPoint = insert(G, curPoint, rightAngle);
+                if (destPoint == -1)
+                    continue;
+
+                double dist = distance(G.points[curPoint], G.points[destPoint]);
+                Edge cur_newEdge(destPoint, dist);
+                Edge dest_newEdge(curPoint, dist);
+
+                G.adj_list[curPoint].push_back(cur_newEdge);
+                G.adj_list[destPoint].push_back(dest_newEdge);
             }
+
+            // G.adj_list[curPoint] = adjList;
         }
 
-        for (int i = 0; i < G.targets.size(); i++)
-            shortest_paths = computeShortestPaths(G, G.targets[i], current_angle);
+        G.stretchFactor = -1;
+        for (int cur = 0; cur < G.pointCount; cur++) {
+            shortest_paths.clear();
+            shortest_paths = computeShortestPaths(G, cur, current_angle);
+        }
 
         printf("Stretch Factor with reference angle %f: %f\n", current_angle, G.stretchFactor);
         current_angle += rotate;
@@ -131,27 +161,14 @@ void rotateYaoGraph(YaoGraph& G, double rightRayAngle, double rotate) {
 
 int main(void) {
     srand(time(NULL));
-    YaoGraph G(10, 3);
-    Point origin(0, 0);
-    G.points.push_back(origin);
+    YaoGraph G(100, 8);
 
-    for (int i = 0; i < 10; i++) {
-        double new_x = rand() % 10;
-        double new_y = rand() % 10;
+    for (int i = 0; i < G.pointCount; i++) {
+        double new_x = rand() % 100 - 50;
+        double new_y = rand() % 100 - 50;
         Point newPoint(new_x, new_y);
 
         G.points.push_back(newPoint);
-    }
-
-    for (int i = 1; i <= 10; i++) {
-        vector<Edge> adjList;
-        for (int j = i + 1; j <= 10; j++) {
-            if (rand() % 2 == 0) {
-                Edge edge(j, distance(G.points[i], G.points[j]));
-                adjList.push_back(edge);
-            }
-        }
-        G.adj_list[i] = adjList;
     }
 
     rotateYaoGraph(G, 0, M_PI / 12);

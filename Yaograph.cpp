@@ -30,6 +30,7 @@ struct YaoGraph {
     int pointCount = 0;
     int coneCount = 0;         // # of cones for each point (=k)
     double stretchFactor = -1;
+    pair<int, int> factorPoint;
     vector<Point> points = {}; // 그래프의 모든 점들
     vector<vector<Edge>> adj_list = {}; // 인접 리스트
 
@@ -85,7 +86,10 @@ unordered_map<int, double> computeShortestPaths(YaoGraph& G, int P, double angle
                 shortest_paths[next_point] = shortest_paths[current_point] + weight;
                 pq.push({ shortest_paths[next_point], next_point });
 
-                G.stretchFactor = max(G.stretchFactor, shortest_paths[next_point] / distance(G.points[P], G.points[next_point]));
+                if (G.stretchFactor < shortest_paths[next_point] / distance(G.points[P], G.points[next_point])) {
+                    G.stretchFactor = shortest_paths[next_point] / distance(G.points[P], G.points[next_point]);
+                    G.factorPoint = make_pair(P, next_point);
+                }
             }
         }
     }
@@ -154,6 +158,8 @@ void rotateYaoGraph(YaoGraph& G, double rightRayAngle, double rotate) {
         }
 
         printf("Stretch Factor with reference angle %f: %f\n", current_angle, G.stretchFactor);
+        printf("Points: (%.f, %.f) and (%.f, %.f)\n\n\n", G.points[G.factorPoint.first].x, G.points[G.factorPoint.first].y,
+                                            G.points[G.factorPoint.second].x, G.points[G.factorPoint.second].y);
         current_angle += rotate;
     }
 }

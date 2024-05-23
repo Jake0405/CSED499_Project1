@@ -10,6 +10,7 @@
 #include <functional>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 
 using namespace std;
 
@@ -34,9 +35,11 @@ class YaoGraph {
 public:
     int pointCount = 0;
     int coneCount = 0;         // # of cones for each point (=k)
-    double stretchFactor = -1;
+    double stretchFactor = -1.0;
     vector<Point> points = {}; // 그래프의 모든 점들
     vector<vector<Edge>> adj_list = {}; // 인접 리스트
+    vector<vector<Edge>> bestAdjList = {};
+    // double averageStretchFactor = -1.0;
 
     // path
     vector<int> graphPath;
@@ -137,14 +140,17 @@ unordered_map<int, double> computeShortestPaths(YaoGraph& G, int P) {
                 if (G.stretchFactor < graphDistance / directDistance) {
                     G.stretchFactor = graphDistance / directDistance;
 
+                    G.bestAdjList = G.adj_list;
+
                     // graphPath, graphDistance, directDistance 업데이트
                     G.directDistance = directDistance;
                     G.graphDistance = graphDistance;
-                    vector<int>().swap(G.graphPath);
+                    vector<int>({next_point}).swap(G.graphPath);
 
                     int cur = next_point;
+
                     while (cur != prev[cur]) {
-                        G.graphPath.insert(G.graphPath.begin(), cur);
+                        G.graphPath.insert(G.graphPath.begin(), prev[cur]);
                         cur = prev[cur];
                     }
                 }
@@ -187,18 +193,20 @@ void rotateYaoGraph(YaoGraph& G, double rightRayAngle, double rotate) {
 void computeYaoGraph(YaoGraph& G, double referenceAngle) {
     // adjacency list를 초기화
     for (auto& list : G.adj_list) vector<Edge>().swap(list);
+    // average stretch factor를 초기화
+    // G.averageStretchFactor = -1.0;
 
     int cone = G.coneCount;
     int pt = G.pointCount;
     double oneRound = 360.0 / double(cone);
-    
-    // k개의 cone 각각에 이웃 point 저장(각 group당 하나씩 선택됨)
-    // pair는 (이웃 point의 index, 거리)로 이루어짐
-    vector<vector<pair<double, int>>> conePoints = {};
-    conePoints.assign(cone, {});
 
     // 각 point마다
     for (int i = 0; i < pt; i++) {
+        // k개의 cone 각각에 이웃 point 저장(각 group당 하나씩 선택됨)
+        // pair는 (이웃 point의 index, 거리)로 이루어짐
+        vector<vector<pair<double, int>>> conePoints = {};
+        conePoints.assign(cone, {});
+
         vector<pair<int, double>> neighbors;
         // relative angle을 계산함
         for (int j = 0; j < pt; j++) {
@@ -224,58 +232,33 @@ void computeYaoGraph(YaoGraph& G, double referenceAngle) {
             sort(group.begin(), group.end());
             Edge E(group[0].second, group[0].first);
             G.adj_list[i].push_back(E);
+            Edge E2(i, group[0].first);
+            G.adj_list[group[0].second].push_back(E2);
+
+            if (i == group[0].second) {
+                int _ = 0;
+            }
         }
         
     }
     
 }
 
-int main() {
-    // 랜덤 시드 설정
-    // srand(time(NULL));
-    // 
-    // 
-    int numPoints = 12;
-    int numCones = 4;
-
-    // point 10개, cone 3개인 YaoGraph 생성
-    // YaoGraph G(10, 3);
-    YaoGraph G(3);
-
-    mt19937 engine((unsigned int)time(NULL));   
-    uniform_int_distribution<int> distribution(0, 1);
-    auto generator = bind(distribution, engine);
-
-    double max = 32767;
-
-    // 랜덤 점들 생성
-    for (int i = 0; i < numPoints; ++i) {
-        double x = rand() / max;
-        double y = rand() / max;
-        Point p(x, y);
-        G.addPoint(p);
-    }
-
-    //double curAngle = 0.0;
-    //double oneRound = 1.0;
-    //double finish = double(360) / double(numCones);
-    // 다음 angle로 이동
-    // curAngle += oneRound;
-
+vector<double> computeMidAngles(YaoGraph& G, double start, double end) {
     vector<double> angles;
 
     // pairwise angle 계산 후 sorting
     for (int i = 0; i < G.pointCount; i++) {
         for (int j = 0; j < G.pointCount; j++) {
             if (i == j) continue;
-            
+
             double angle = computeRelativeAngle(G.points[i], G.points[j]);
             angles.push_back(angle);
         }
     }
 
-    double start = 0.0; angles.push_back(start);
-    double end = 360.0 / double(numCones); angles.push_back(end);
+    angles.push_back(start);
+    angles.push_back(end);
 
     sort(angles.begin(), angles.end());
 
@@ -284,28 +267,174 @@ int main() {
         midAngles.push_back((angles[i] + angles[i + 1]) / 2);
     }
 
+    return midAngles;
+}
+
+// simulated annealing 같이 할 수 있도록?
+
+// Heuristic 1
+// start - end 사이를 t개의 구간으로 나눔
+// 그 중에서 제일 좋은 (양 끝 index에 대한 stretch factor의 평균이 가장 낮은) 구간 하나를 반환
+tuple<double, int, int> randomSampling(YaoGraph& G, vector<double> midAngles, int start, int end, int t) {
+    
+    // start에서 시작해서
+    // step마다 계속 띄엄띄엄 가게 됨
+    double step = double(end - start) / double(t);
+
+    // double curAngle = -1;
+
+    vector<int> IDs = { start };
+    double curID = start;
+    
+    while (true) {
+        curID += step;
+
+        if (curID >= midAngles.size()) {
+            IDs.push_back(end); break;
+        }
+        else {
+            IDs.push_back(floor(curID));
+        }
+    }
+
+    vector<tuple<double, int, int>> tupleVec;
+
+    // stretch factor intervals
+    vector<tuple<double, int, int>> intervals;
+    for (int i = 0; i + 1 < IDs.size(); i++) {
+        double angle1 = midAngles[IDs[i]];
+        double angle2 = midAngles[IDs[i+1]];
+
+        computeStretchFactor(G, angle1); double factor1 = G.stretchFactor;
+        computeStretchFactor(G, angle2); double factor2 = G.stretchFactor;
+
+        tupleVec.push_back(make_tuple((factor1 + factor2) / 2, IDs[i], IDs[i + 1]));
+    }
+
+    sort(tupleVec.begin(), tupleVec.end());
+
+    return tupleVec[0];
+
+}
+
+// 성능 계산
+// average stretch factor 계산
+// 등수, 비율 모두 계산
+void computePerformance(YaoGraph& G, vector<double> midAngles, int myID) {
+
+    
+    double minStretchFactor = DBL_MAX; int minID = -1;
+    double maxStretchFactor = DBL_MIN; int maxID = -1;
+    
+    // stretch factor, ID 순
+    vector<pair<double, int>> pairVec;
+
+    for (int i = 0; i < midAngles.size(); i++) {
+        auto& midAngle = midAngles[i];
+
+        computeStretchFactor(G, midAngle);
+
+        pairVec.push_back(make_pair(G.stretchFactor, i));
+
+        if (minStretchFactor > G.stretchFactor) {
+            minStretchFactor = G.stretchFactor;
+            minID = i;
+        }
+        if (maxStretchFactor < G.stretchFactor) {
+            maxStretchFactor = G.stretchFactor;
+            maxID = i;
+        }
+    }
+}
+
+void computeStretchFactor(YaoGraph& G, double midAngle) {
+
+    computeYaoGraph(G, midAngle);
+
+    // stretch factor 초기화
+    G.stretchFactor = -1.0;
+
+    // stretch factor 재계산
+    for (int j = 0; j < G.pointCount; j++) {
+        computeShortestPaths(G, j);
+    }
+
+}
+
+int main() {
+
+    ofstream fout;
+    // fout.open("C:\\Users\\hwikim\\Dropbox\\ALGOLAB\\연구참여\\신재욱학생\\points.txt");
+    fout.open("points.txt");
+
+    // 랜덤 시드 설정
+    // srand(time(NULL));
+    // 
+    // 
+    bool PRINT_ADJ_LIST = true;
+
+    bool ranDom = true;
+    int numCones = 7;
+
+    // point 10개, cone 3개인 YaoGraph 생성
+    // YaoGraph G(10, 3);
+    YaoGraph G(numCones);
+
+    if (ranDom) {
+        int numPoints = 20;
+
+        mt19937 engine((unsigned int)time(NULL));
+        uniform_int_distribution<int> distribution(0, 1);
+        auto generator = bind(distribution, engine);
+
+        double max = 32767;
+
+        // 랜덤 점들 생성
+        for (int i = 0; i < numPoints; ++i) {
+            double x = rand() / max;
+            double y = rand() / max;
+            Point p(x, y);
+            G.addPoint(p);
+        }
+    }
+    else {
+        G.addPoint(Point(0.0, 0.0));
+        G.addPoint(Point(1.0, 1.0));
+        G.addPoint(Point(1.0, -1.0));
+        G.addPoint(Point(-1.0, -1.0));
+        G.addPoint(Point(-1.0, 1.0));
+    }
+
+    fout << G.pointCount << endl;
+    for (int i = 0; i < G.pointCount; i++) {
+        cout << "Point " << i << ": (" << G.points[i].x << ", " << G.points[i].y << ")" << endl;
+        fout << G.points[i].x << " " << G.points[i].y << endl;
+    }
+    cout << endl;
+    fout << endl;
+
+    fout.close();
+
+    fout.open("C:\\Program Files\\gnuplot\\bin\\stretchFactor.txt");
+
+    double start = 0.0; double end = 360.0 / double(G.coneCount);
+    vector<double> midAngles = computeMidAngles(G, start, end);
+
     int totalChangeNum = 0;
     int changeNum = 0;
     double prevFactor = -1;
     // double curFactor = -1;
     double eps = 0.001;
 
+    bool first = true;
+
     for (auto& midAngle : midAngles) {
         if (midAngle >= end) continue;
 
         totalChangeNum++;
 
-        computeYaoGraph(G, midAngle);
-        // G.print();
-
-        // stretch factor 초기화
-        G.stretchFactor = -1.0;
-
-        // stretch factor 재계산
-        for (int j = 0; j < G.pointCount; j++) {
-            computeShortestPaths(G, j);
-        }
-
+        computeStretchFactor(G, midAngle);
+        
         if (prevFactor == -1) prevFactor = G.stretchFactor;
         else if (abs(prevFactor - G.stretchFactor) > eps) {
             prevFactor = G.stretchFactor;
@@ -313,46 +442,65 @@ int main() {
         }
 
         printf("Stretch Factor with reference angle %f: %f\n", midAngle, G.stretchFactor);
+
+        fout << midAngle << " " << G.stretchFactor << endl;
+
         if (!G.graphPath.empty()) {
-            cout << "Worst pair: (" << G.graphPath[0] << ", " << G.graphPath[G.graphPath.size() - 1] << ")" << endl;
-            cout << "Direct Distane: " << G.directDistance << ", Graph Distance: " << G.graphDistance << endl;
+
+            if (PRINT_ADJ_LIST && first) {
+                cout << "Adjacency List" << endl;
+                for (int k = 0; k < G.pointCount; k++) {
+                    auto& row = G.bestAdjList[k];
+
+                    for (int ii = 0; ii < G.pointCount; ii++) {
+                        bool exist = false;
+                        for (auto& jj : row) {
+                            if (jj.dest == ii) {
+                                cout << "1 ";
+                                exist = true;
+                                break;
+                            }
+                        }
+                        if (!exist) cout << "0 ";
+                    }
+                    cout << endl;
+                }
+                first = false;
+                // cout << endl;
+            }
+
+            cout << "Worst Pair: (" << G.graphPath[0] << ", " << G.graphPath[G.graphPath.size() - 1] << ")" << endl;
+
+            int i = 0;
+            cout << "Graph Path: ";
+            while (true) {
+                cout << G.graphPath[i] << " ";
+                i++;
+                if (i >= G.graphPath.size()) break;
+            }
+            cout << endl;
+
+            i = 0;
+            cout << "Graph Path Edge Length: ";
+            while (i + 1 < G.graphPath.size()) {
+                cout << distance(G.points[G.graphPath[i]], G.points[G.graphPath[i + 1]]) << " ";
+                i++;
+            }
+            cout << endl;
+
+            cout << "Graph Distance : " << G.graphDistance << endl;
+
+            cout << "Direct Distance: " << G.directDistance;
+
+            // cout << ", On-site Computation: " << distance(G.points[G.graphPath[0]], G.points[G.graphPath[G.graphPath.size() - 1]]) << endl;
+            cout << endl;
         }
 
         cout << endl;
     }
 
+    fout.close();
+
     cout << "Total stretch factor changes: " << changeNum << " out of " << totalChangeNum << endl;
 
 }
-
-//int main(void) {
-//    srand(time(NULL));
-//    YaoGraph G(10, 3);
-//    Point origin(0, 0);
-//    G.points.push_back(origin);
-//
-//    for (int i = 0; i < 10; i++) {
-//        double new_x = rand() % 10;
-//        double new_y = rand() % 10;
-//        Point newPoint(new_x, new_y);
-//
-//        G.points.push_back(newPoint);
-//    }
-//
-//    for (int i = 1; i <= 10; i++) {
-//        vector<Edge> adjList;
-//        for (int j = i + 1; j <= 10; j++) {
-//            Edge edge(j, distance(G.points[i], G.points[j]));
-//            adjList.push_back(edge);
-//
-//            //if (rand() % 2 == 0) {
-//            //    Edge edge(j, distance(G.points[i], G.points[j]));
-//            //    adjList.push_back(edge);
-//            //}
-//        }
-//        G.adj_list[i] = adjList;
-//    }
-//
-//    rotateYaoGraph(G, 0, M_PI / 12);
-//    return 0;
-//}

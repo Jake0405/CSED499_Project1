@@ -62,6 +62,7 @@ public:
     }
     void addPoint(Point p);
     void print();
+    void initialize();
 };
 
 void YaoGraph::addPoint(Point p) {
@@ -79,6 +80,17 @@ void YaoGraph::print() {
         }
         
     }
+}
+
+void YaoGraph::initialize() {
+    pointCount = 0;
+    stretchFactor = -1.0;
+    points = {}; 
+    adj_list = {}; 
+    bestAdjList = {};
+    graphPath = {}; 
+    directDistance = -1; 
+    graphDistance = -1;
 }
 
 // 두 점 사이의 거리를 계산하는 함수
@@ -270,7 +282,23 @@ vector<double> computeMidAngles(YaoGraph& G, double start, double end) {
     return midAngles;
 }
 
+void computeStretchFactor(YaoGraph& G, double midAngle) {
+
+    computeYaoGraph(G, midAngle);
+
+    // stretch factor 초기화
+    G.stretchFactor = -1.0;
+
+    // stretch factor 재계산
+    for (int j = 0; j < G.pointCount; j++) {
+        computeShortestPaths(G, j);
+    }
+
+}
+
 // simulated annealing 같이 할 수 있도록?
+
+// local search
 
 // Heuristic 1
 // start - end 사이를 t개의 구간으로 나눔
@@ -289,7 +317,7 @@ tuple<double, int, int> randomSampling(YaoGraph& G, vector<double> midAngles, in
     while (true) {
         curID += step;
 
-        if (curID >= midAngles.size()) {
+        if (curID > end) {
             IDs.push_back(end); break;
         }
         else {
@@ -313,21 +341,68 @@ tuple<double, int, int> randomSampling(YaoGraph& G, vector<double> midAngles, in
 
     sort(tupleVec.begin(), tupleVec.end());
 
+    if (get<1>(tupleVec[0]) > get<2>(tupleVec[0])) {
+        int _ = 0;
+    }
+
     return tupleVec[0];
 
+}
+
+// 가장 좋은 ID를 반환
+int bruteForce(YaoGraph& G, vector<double> midAngles, int start, int end) {
+
+    double bestID = -1;
+    double minStretchFactor = DBL_MAX;
+
+    for (int i = start; i <= end; i++) {
+        computeStretchFactor(G, midAngles[i]);
+        if (minStretchFactor > G.stretchFactor) {
+            minStretchFactor = G.stretchFactor;
+            bestID = i;
+        }
+    }
+
+    if (bestID == -1) {
+        int _ = 0;
+    }
+
+    return bestID;
+}
+
+void generateRandomPoints(YaoGraph& G, int numPoints) {
+
+    G.initialize();
+
+    mt19937 engine((unsigned int)time(NULL));
+    uniform_int_distribution<int> distribution(0, 1);
+    auto generator = bind(distribution, engine);
+
+    double max = 32767;
+
+    // 랜덤 점들 생성
+    for (int i = 0; i < numPoints; ++i) {
+        double x = rand() / max;
+        double y = rand() / max;
+        Point p(x, y);
+        G.addPoint(p);
+    }
 }
 
 // 성능 계산
 // average stretch factor 계산
 // 등수, 비율 모두 계산
 void computePerformance(YaoGraph& G, vector<double> midAngles, int myID) {
+    cout << endl;
 
-    
     double minStretchFactor = DBL_MAX; int minID = -1;
     double maxStretchFactor = DBL_MIN; int maxID = -1;
     
     // stretch factor, ID 순
     vector<pair<double, int>> pairVec;
+
+    computeStretchFactor(G, midAngles[myID]);
+    double myStretchFactor = G.stretchFactor;
 
     for (int i = 0; i < midAngles.size(); i++) {
         auto& midAngle = midAngles[i];
@@ -345,20 +420,36 @@ void computePerformance(YaoGraph& G, vector<double> midAngles, int myID) {
             maxID = i;
         }
     }
-}
 
-void computeStretchFactor(YaoGraph& G, double midAngle) {
+    sort(pairVec.begin(), pairVec.end());
 
-    computeYaoGraph(G, midAngle);
-
-    // stretch factor 초기화
-    G.stretchFactor = -1.0;
-
-    // stretch factor 재계산
-    for (int j = 0; j < G.pointCount; j++) {
-        computeShortestPaths(G, j);
+    int rank = -1;
+    // 등수 계산
+    for (int i = 0; i < pairVec.size(); i++) {
+        if (pairVec[i].second == myID) {
+            // 공동 등수로 매김(앞으로 올 수 있는 만큼 이동)
+            while (i - 1 >= 0 && pairVec[i].first == pairVec[i-1].first) {
+                i--;
+            }
+            rank = i;
+            break;
+        }
     }
 
+    cout << "Rank: " << rank << " out of " << pairVec.size() << endl;
+    cout << endl;
+
+    double maxMinDifference = maxStretchFactor - minStretchFactor;
+    double myDifference = myStretchFactor - minStretchFactor;
+
+    cout << "Min Stretch Factor: " << minStretchFactor << endl;
+    cout << "Max Stretch Factor: " << maxStretchFactor << endl;
+
+    cout << "My Stretch Factor: " << myStretchFactor << endl;
+    // cout << "Max-Min Difference: " << maxMinDifference << endl;
+    // cout << "My Difference: " << myDifference << endl;
+
+    cout << "Approximation Factor: " << myStretchFactor / minStretchFactor << endl;
 }
 
 int main() {
@@ -379,128 +470,144 @@ int main() {
     // point 10개, cone 3개인 YaoGraph 생성
     // YaoGraph G(10, 3);
     YaoGraph G(numCones);
+    
+    int randomNumPoints = 20;
+    int numIterations = 10;
 
-    if (ranDom) {
-        int numPoints = 20;
+    for (int i = 0; i < numIterations; i++) {
+        generateRandomPoints(G, randomNumPoints);
 
-        mt19937 engine((unsigned int)time(NULL));
-        uniform_int_distribution<int> distribution(0, 1);
-        auto generator = bind(distribution, engine);
-
-        double max = 32767;
-
-        // 랜덤 점들 생성
-        for (int i = 0; i < numPoints; ++i) {
-            double x = rand() / max;
-            double y = rand() / max;
-            Point p(x, y);
-            G.addPoint(p);
+        fout << G.pointCount << endl;
+        for (int i = 0; i < G.pointCount; i++) {
+            cout << "Point " << i << ": (" << G.points[i].x << ", " << G.points[i].y << ")" << endl;
+            fout << G.points[i].x << " " << G.points[i].y << endl;
         }
-    }
-    else {
-        G.addPoint(Point(0.0, 0.0));
-        G.addPoint(Point(1.0, 1.0));
-        G.addPoint(Point(1.0, -1.0));
-        G.addPoint(Point(-1.0, -1.0));
-        G.addPoint(Point(-1.0, 1.0));
-    }
-
-    fout << G.pointCount << endl;
-    for (int i = 0; i < G.pointCount; i++) {
-        cout << "Point " << i << ": (" << G.points[i].x << ", " << G.points[i].y << ")" << endl;
-        fout << G.points[i].x << " " << G.points[i].y << endl;
-    }
-    cout << endl;
-    fout << endl;
-
-    fout.close();
-
-    fout.open("C:\\Program Files\\gnuplot\\bin\\stretchFactor.txt");
-
-    double start = 0.0; double end = 360.0 / double(G.coneCount);
-    vector<double> midAngles = computeMidAngles(G, start, end);
-
-    int totalChangeNum = 0;
-    int changeNum = 0;
-    double prevFactor = -1;
-    // double curFactor = -1;
-    double eps = 0.001;
-
-    bool first = true;
-
-    for (auto& midAngle : midAngles) {
-        if (midAngle >= end) continue;
-
-        totalChangeNum++;
-
-        computeStretchFactor(G, midAngle);
-        
-        if (prevFactor == -1) prevFactor = G.stretchFactor;
-        else if (abs(prevFactor - G.stretchFactor) > eps) {
-            prevFactor = G.stretchFactor;
-            changeNum++;
-        }
-
-        printf("Stretch Factor with reference angle %f: %f\n", midAngle, G.stretchFactor);
-
-        fout << midAngle << " " << G.stretchFactor << endl;
-
-        if (!G.graphPath.empty()) {
-
-            if (PRINT_ADJ_LIST && first) {
-                cout << "Adjacency List" << endl;
-                for (int k = 0; k < G.pointCount; k++) {
-                    auto& row = G.bestAdjList[k];
-
-                    for (int ii = 0; ii < G.pointCount; ii++) {
-                        bool exist = false;
-                        for (auto& jj : row) {
-                            if (jj.dest == ii) {
-                                cout << "1 ";
-                                exist = true;
-                                break;
-                            }
-                        }
-                        if (!exist) cout << "0 ";
-                    }
-                    cout << endl;
-                }
-                first = false;
-                // cout << endl;
-            }
-
-            cout << "Worst Pair: (" << G.graphPath[0] << ", " << G.graphPath[G.graphPath.size() - 1] << ")" << endl;
-
-            int i = 0;
-            cout << "Graph Path: ";
-            while (true) {
-                cout << G.graphPath[i] << " ";
-                i++;
-                if (i >= G.graphPath.size()) break;
-            }
-            cout << endl;
-
-            i = 0;
-            cout << "Graph Path Edge Length: ";
-            while (i + 1 < G.graphPath.size()) {
-                cout << distance(G.points[G.graphPath[i]], G.points[G.graphPath[i + 1]]) << " ";
-                i++;
-            }
-            cout << endl;
-
-            cout << "Graph Distance : " << G.graphDistance << endl;
-
-            cout << "Direct Distance: " << G.directDistance;
-
-            // cout << ", On-site Computation: " << distance(G.points[G.graphPath[0]], G.points[G.graphPath[G.graphPath.size() - 1]]) << endl;
-            cout << endl;
-        }
-
         cout << endl;
+        fout << endl;
+
+        fout.close();
+
+        fout.open("C:\\Program Files\\gnuplot\\bin\\stretchFactor.txt");
+
+        double start = 0.0; double end = 360.0 / double(G.coneCount);
+        vector<double> midAngles = computeMidAngles(G, start, end);
+
+        // 나누는 개수(t)보다는 base_size가 더 커야 함.
+        int t = 5;
+        int base_size = 10;
+        // int base_size = 3;
+
+        int startID = 0;
+        int endID = midAngles.size() - 1;
+
+        while (endID - startID > base_size) {
+            auto trp = randomSampling(G, midAngles, startID, endID, 5);
+            startID = get<1>(trp);
+            endID = get<2>(trp);
+        }
+
+        // 남은 경우들은 다 직접 계산하고 그 중에서 가장 좋은 ID를 찾음.
+        int bestID = bruteForce(G, midAngles, startID, endID);
+
+        computePerformance(G, midAngles, bestID);
     }
 
-    fout.close();
+    //if (ranDom) {
+    //    generateRandomPoints(G, randomNumPoints);
+    //}
+    //else {
+    //    G.addPoint(Point(0.0, 0.0));
+    //    G.addPoint(Point(1.0, 1.0));
+    //    G.addPoint(Point(1.0, -1.0));
+    //    G.addPoint(Point(-1.0, -1.0));
+    //    G.addPoint(Point(-1.0, 1.0));
+    //}
 
-    cout << "Total stretch factor changes: " << changeNum << " out of " << totalChangeNum << endl;
+ 
 
+    //int totalChangeNum = 0;
+    //int changeNum = 0;
+    //double prevFactor = -1;
+    //// double curFactor = -1;
+    //double eps = 0.001;
+
+    //bool first = true;
+
+    //for (auto& midAngle : midAngles) {
+    //    if (midAngle >= end) continue;
+
+    //    totalChangeNum++;
+
+    //    computeStretchFactor(G, midAngle);
+    //    
+    //    if (prevFactor == -1) prevFactor = G.stretchFactor;
+    //    else if (abs(prevFactor - G.stretchFactor) > eps) {
+    //        prevFactor = G.stretchFactor;
+    //        changeNum++;
+    //    }
+
+    //    printf("Stretch Factor with reference angle %f: %f\n", midAngle, G.stretchFactor);
+
+    //    fout << midAngle << " " << G.stretchFactor << endl;
+
+    //    if (!G.graphPath.empty()) {
+
+    //        if (PRINT_ADJ_LIST && first) {
+    //            cout << "Adjacency List" << endl;
+    //            for (int k = 0; k < G.pointCount; k++) {
+    //                auto& row = G.bestAdjList[k];
+
+    //                for (int ii = 0; ii < G.pointCount; ii++) {
+    //                    bool exist = false;
+    //                    for (auto& jj : row) {
+    //                        if (jj.dest == ii) {
+    //                            cout << "1 ";
+    //                            exist = true;
+    //                            break;
+    //                        }
+    //                    }
+    //                    if (!exist) cout << "0 ";
+    //                }
+    //                cout << endl;
+    //            }
+    //            first = false;
+    //            // cout << endl;
+    //        }
+
+    //        cout << "Worst Pair: (" << G.graphPath[0] << ", " << G.graphPath[G.graphPath.size() - 1] << ")" << endl;
+
+    //        int i = 0;
+    //        cout << "Graph Path: ";
+    //        while (true) {
+    //            cout << G.graphPath[i] << " ";
+    //            i++;
+    //            if (i >= G.graphPath.size()) break;
+    //        }
+    //        cout << endl;
+
+    //        i = 0;
+    //        cout << "Graph Path Edge Length: ";
+    //        while (i + 1 < G.graphPath.size()) {
+    //            cout << distance(G.points[G.graphPath[i]], G.points[G.graphPath[i + 1]]) << " ";
+    //            i++;
+    //        }
+    //        cout << endl;
+
+    //        cout << "Graph Distance : " << G.graphDistance << endl;
+
+    //        cout << "Direct Distance: " << G.directDistance;
+
+    //        // cout << ", On-site Computation: " << distance(G.points[G.graphPath[0]], G.points[G.graphPath[G.graphPath.size() - 1]]) << endl;
+    //        cout << endl;
+    //    }
+
+    //    cout << endl;
+    //}
+
+    //fout.close();
+
+    //cout << "Total stretch factor changes: " << changeNum << " out of " << totalChangeNum << endl;
+
+    // computePerformance(G, midAngles, 0);
+    // computePerformance(G, midAngles, 5);
 }

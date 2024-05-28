@@ -35,7 +35,11 @@ class YaoGraph {
 public:
     int pointCount = 0;
     int coneCount = 0;         // # of cones for each point (=k)
+
     double stretchFactor = -1.0;
+    double stretchFactorSum = 0.0;
+    double pairCount = 0;
+
     vector<Point> points = {}; // 그래프의 모든 점들
     vector<vector<Edge>> adj_list = {}; // 인접 리스트
     vector<vector<Edge>> bestAdjList = {};
@@ -85,6 +89,8 @@ void YaoGraph::print() {
 void YaoGraph::initialize() {
     pointCount = 0;
     stretchFactor = -1.0;
+    stretchFactorSum = 0.0;
+    pairCount = 0;
     points = {}; 
     adj_list = {}; 
     bestAdjList = {};
@@ -123,7 +129,7 @@ void initializeShortestPaths(int size, unordered_map<int, double>& shortest_path
 }
 
 // Dijkstra 알고리즘을 이용하여 최단 경로 및 stretch factor를 계산하는 함수
-unordered_map<int, double> computeShortestPaths(YaoGraph& G, int P) {
+unordered_map<int, double> computeShortestPaths(YaoGraph& G, int P, bool isMaximum) {
     unordered_map<int, double> shortest_paths;
     initializeShortestPaths(G.pointCount, shortest_paths, P);
     priority_queue<pair<double, int>, vector<pair<double, int>>, greater<pair<double, int>>> pq;
@@ -149,24 +155,31 @@ unordered_map<int, double> computeShortestPaths(YaoGraph& G, int P) {
                 double directDistance = distance(G.points[P], G.points[next_point]);
                 double graphDistance = shortest_paths[next_point];
 
-                if (G.stretchFactor < graphDistance / directDistance) {
-                    G.stretchFactor = graphDistance / directDistance;
+                // compute the maximum stretch factor
+                if (isMaximum) {
+                    if (G.stretchFactor < graphDistance / directDistance) {
+                        G.stretchFactor = graphDistance / directDistance;
 
-                    G.bestAdjList = G.adj_list;
+                        G.bestAdjList = G.adj_list;
 
-                    // graphPath, graphDistance, directDistance 업데이트
-                    G.directDistance = directDistance;
-                    G.graphDistance = graphDistance;
-                    vector<int>({next_point}).swap(G.graphPath);
+                        // graphPath, graphDistance, directDistance 업데이트
+                        G.directDistance = directDistance;
+                        G.graphDistance = graphDistance;
+                        vector<int>({ next_point }).swap(G.graphPath);
 
-                    int cur = next_point;
+                        int cur = next_point;
 
-                    while (cur != prev[cur]) {
-                        G.graphPath.insert(G.graphPath.begin(), prev[cur]);
-                        cur = prev[cur];
+                        while (cur != prev[cur]) {
+                            G.graphPath.insert(G.graphPath.begin(), prev[cur]);
+                            cur = prev[cur];
+                        }
                     }
                 }
-                        
+                // compute the average stretch factor
+                else {
+                    G.stretchFactorSum += graphDistance / directDistance;
+                    G.pairCount += 1;
+                }
             }
         }
     }
@@ -174,33 +187,33 @@ unordered_map<int, double> computeShortestPaths(YaoGraph& G, int P) {
     return shortest_paths;
 }
 
-// Yao Graph의 ray를 회전하며 stretch factor를 매번 계산하는 함수
-void rotateYaoGraph(YaoGraph& G, double rightRayAngle, double rotate) {
-    double current_angle = rightRayAngle;
-    unordered_map<int, double> shortest_paths;
-
-    while (current_angle < rightRayAngle + 360 / G.coneCount) {
-        // 해당 영역 안의 점들을 PQ에 삽입
-        G.targetPoints = {};
-        G.targets = {};
-        G.stretchFactor = -1;
-        for (int cur = 1; cur < G.pointCount; cur++) {
-            double relative_angle = computeRelativeAngle(G.points[0], G.points[cur]);
-            double angle_diff = relative_angle - current_angle;
-
-            if (angle_diff >= 0 && angle_diff < 360 / G.coneCount) {
-                G.targetPoints.push(make_pair(angle_diff, cur));
-                G.targets.push_back(cur);
-            }
-        }
-
-        for (int i = 0; i < G.targets.size(); i++)
-            shortest_paths = computeShortestPaths(G, G.targets[i]);
-
-        printf("Stretch Factor with reference angle %f: %f\n", current_angle, G.stretchFactor);
-        current_angle += rotate;
-    }
-}
+//// Yao Graph의 ray를 회전하며 stretch factor를 매번 계산하는 함수
+//void rotateYaoGraph(YaoGraph& G, double rightRayAngle, double rotate) {
+//    double current_angle = rightRayAngle;
+//    unordered_map<int, double> shortest_paths;
+//
+//    while (current_angle < rightRayAngle + 360 / G.coneCount) {
+//        // 해당 영역 안의 점들을 PQ에 삽입
+//        G.targetPoints = {};
+//        G.targets = {};
+//        G.stretchFactor = -1;
+//        for (int cur = 1; cur < G.pointCount; cur++) {
+//            double relative_angle = computeRelativeAngle(G.points[0], G.points[cur]);
+//            double angle_diff = relative_angle - current_angle;
+//
+//            if (angle_diff >= 0 && angle_diff < 360 / G.coneCount) {
+//                G.targetPoints.push(make_pair(angle_diff, cur));
+//                G.targets.push_back(cur);
+//            }
+//        }
+//
+//        for (int i = 0; i < G.targets.size(); i++)
+//            shortest_paths = computeShortestPaths(G, G.targets[i], isMaximum);
+//
+//        printf("Stretch Factor with reference angle %f: %f\n", current_angle, G.stretchFactor);
+//        current_angle += rotate;
+//    }
+//}
 
 void computeYaoGraph(YaoGraph& G, double referenceAngle) {
     // adjacency list를 초기화
@@ -282,28 +295,112 @@ vector<double> computeMidAngles(YaoGraph& G, double start, double end) {
     return midAngles;
 }
 
-void computeStretchFactor(YaoGraph& G, double midAngle) {
 
-    computeYaoGraph(G, midAngle);
+void computeStretchFactor(YaoGraph& G, double midAngle, bool isMaximum) {
+    
+    // maximum stretch factor 계산
+    if (isMaximum) {
+        computeYaoGraph(G, midAngle);
 
-    // stretch factor 초기화
-    G.stretchFactor = -1.0;
+        // stretch factor 초기화
+        G.stretchFactor = -1.0;
 
-    // stretch factor 재계산
-    for (int j = 0; j < G.pointCount; j++) {
-        computeShortestPaths(G, j);
+        // stretch factor 재계산
+        for (int j = 0; j < G.pointCount; j++) {
+            computeShortestPaths(G, j, true);
+        }
     }
+    // average stretch factor 계산
+    else {
+        computeYaoGraph(G, midAngle);
 
+        // stretch factor 재계산
+        for (int j = 0; j < G.pointCount; j++) {
+            computeShortestPaths(G, j, false);
+        }
+
+        G.stretchFactor = G.stretchFactorSum / double(G.pairCount);
+    }
 }
 
 // simulated annealing 같이 할 수 있도록?
+// return type : bestID
+int simulatedAnnealing(YaoGraph& G, vector<double> midAngles, bool isMaximum) {
+    bool printFlag = false;
+    
+    // 초기해: 아무렇게나 잡기
+    int initID = rand() / midAngles.size();
+    computeStretchFactor(G, midAngles[initID], true);
+    double initSol = G.stretchFactor;
+    
+    // 현재해
+    int  curID = initID;
+    double curSol = initSol;
+
+    int numIters = midAngles.size();
+    int curIter = 0;
+
+    double T0 = 10;
+    double T = T0;
+
+    double max = 32767;
+
+    // 온도가 충분히 낮아질 때까지
+    while (curIter < numIters) {
+        T *= 0.95;
+        curIter++;
+
+        if (printFlag) cout << "T: " << T << ", " << "iter: " << curIter << endl;
+
+        // 후보해: 아무렇게나 잡기
+        int candID = rand() / midAngles.size();
+        computeStretchFactor(G, midAngles[candID], true);
+        double candSol = G.stretchFactor;
+
+        if (printFlag) cout << "candID: " << candID << ", " << "candSol: " << candSol; // << endl;
+
+        // 후보해: 최대 step (점점 줄어듬) 안에 있는 애들 중에서 랜덤으로?
+        // int candID
+
+        // 후보해가 초기해보다 낫다면, 후보해를 다음해로 선택
+        if (candSol < curSol) {
+            curID = candID;
+            curSol = candSol;
+
+            if (printFlag) cout << " (changed)";
+        }
+        // 후보해가 초기해보다 나쁘다면, 다음의 확률로 다음해를 선택
+        else {
+            // x는 후보해와 초기해의 차이
+            // 최소화 문제이므로 (초기해 - 후보해)로 값을 정해야 함
+            double x = (curSol - candSol) / T;
+            double changeProb = exp(x);
+
+            if (rand() / max < changeProb) {
+                curSol = candSol;
+                curID = candID;
+
+                if (printFlag) cout << " (changed)";
+            }
+            else {
+                if (printFlag) cout << " (unchanged)";
+            }
+        }
+
+        if (printFlag) cout << endl;
+
+        if (printFlag) cout << "curID: " << curID << ", " << "curSol: " << curSol << endl;
+    }
+
+    return curID;
+}
 
 // local search
 
 // Heuristic 1
 // start - end 사이를 t개의 구간으로 나눔
 // 그 중에서 제일 좋은 (양 끝 index에 대한 stretch factor의 평균이 가장 낮은) 구간 하나를 반환
-tuple<double, int, int> randomSampling(YaoGraph& G, vector<double> midAngles, int start, int end, int t) {
+tuple<double, int, int> randomSampling(YaoGraph& G, vector<double> midAngles, bool isMaximum, int start, int end, int t) {
     
     // start에서 시작해서
     // step마다 계속 띄엄띄엄 가게 됨
@@ -333,38 +430,30 @@ tuple<double, int, int> randomSampling(YaoGraph& G, vector<double> midAngles, in
         double angle1 = midAngles[IDs[i]];
         double angle2 = midAngles[IDs[i+1]];
 
-        computeStretchFactor(G, angle1); double factor1 = G.stretchFactor;
-        computeStretchFactor(G, angle2); double factor2 = G.stretchFactor;
+        computeStretchFactor(G, angle1, isMaximum); double factor1 = G.stretchFactor;
+        computeStretchFactor(G, angle2, isMaximum); double factor2 = G.stretchFactor;
 
         tupleVec.push_back(make_tuple((factor1 + factor2) / 2, IDs[i], IDs[i + 1]));
     }
 
     sort(tupleVec.begin(), tupleVec.end());
 
-    if (get<1>(tupleVec[0]) > get<2>(tupleVec[0])) {
-        int _ = 0;
-    }
-
     return tupleVec[0];
 
 }
 
 // 가장 좋은 ID를 반환
-int bruteForce(YaoGraph& G, vector<double> midAngles, int start, int end) {
+int bruteForce(YaoGraph& G, vector<double> midAngles, int start, int end, bool isMaximum) {
 
     double bestID = -1;
     double minStretchFactor = DBL_MAX;
 
     for (int i = start; i <= end; i++) {
-        computeStretchFactor(G, midAngles[i]);
+        computeStretchFactor(G, midAngles[i], isMaximum);
         if (minStretchFactor > G.stretchFactor) {
             minStretchFactor = G.stretchFactor;
             bestID = i;
         }
-    }
-
-    if (bestID == -1) {
-        int _ = 0;
     }
 
     return bestID;
@@ -392,7 +481,7 @@ void generateRandomPoints(YaoGraph& G, int numPoints) {
 // 성능 계산
 // average stretch factor 계산
 // 등수, 비율 모두 계산
-void computePerformance(YaoGraph& G, vector<double> midAngles, int myID) {
+void computePerformance(YaoGraph& G, vector<double> midAngles, int myID, int isMaximum) {
     cout << endl;
 
     double minStretchFactor = DBL_MAX; int minID = -1;
@@ -401,13 +490,13 @@ void computePerformance(YaoGraph& G, vector<double> midAngles, int myID) {
     // stretch factor, ID 순
     vector<pair<double, int>> pairVec;
 
-    computeStretchFactor(G, midAngles[myID]);
+    computeStretchFactor(G, midAngles[myID], isMaximum);
     double myStretchFactor = G.stretchFactor;
 
     for (int i = 0; i < midAngles.size(); i++) {
         auto& midAngle = midAngles[i];
 
-        computeStretchFactor(G, midAngle);
+        computeStretchFactor(G, midAngle, isMaximum);
 
         pairVec.push_back(make_pair(G.stretchFactor, i));
 
@@ -442,14 +531,18 @@ void computePerformance(YaoGraph& G, vector<double> midAngles, int myID) {
     double maxMinDifference = maxStretchFactor - minStretchFactor;
     double myDifference = myStretchFactor - minStretchFactor;
 
-    cout << "Min Stretch Factor: " << minStretchFactor << endl;
-    cout << "Max Stretch Factor: " << maxStretchFactor << endl;
+    string s = "Average";
+    if (isMaximum) s = "Maximum";
 
-    cout << "My Stretch Factor: " << myStretchFactor << endl;
+    cout << "Min " + s + " Stretch Factor : " << minStretchFactor << endl;
+    cout << "Max " + s + " Stretch Factor: " << maxStretchFactor << endl;
+
+    cout << "My " + s + " Stretch Factor: " << myStretchFactor << endl;
     // cout << "Max-Min Difference: " << maxMinDifference << endl;
     // cout << "My Difference: " << myDifference << endl;
 
     cout << "Approximation Factor: " << myStretchFactor / minStretchFactor << endl;
+    cout << endl;
 }
 
 int main() {
@@ -466,6 +559,7 @@ int main() {
 
     bool ranDom = true;
     int numCones = 7;
+    bool isMaximum = true;
 
     // point 10개, cone 3개인 YaoGraph 생성
     // YaoGraph G(10, 3);
@@ -492,122 +586,125 @@ int main() {
         double start = 0.0; double end = 360.0 / double(G.coneCount);
         vector<double> midAngles = computeMidAngles(G, start, end);
 
-        // 나누는 개수(t)보다는 base_size가 더 커야 함.
-        int t = 5;
-        int base_size = 10;
-        // int base_size = 3;
+        //// 나누는 개수(t)보다는 base_size가 더 커야 함.
+        //int t = 5;
+        //int base_size = 10;
+        //// int base_size = 3;
 
-        int startID = 0;
-        int endID = midAngles.size() - 1;
+        //int startID = 0;
+        //int endID = midAngles.size() - 1;
 
-        while (endID - startID > base_size) {
-            auto trp = randomSampling(G, midAngles, startID, endID, 5);
-            startID = get<1>(trp);
-            endID = get<2>(trp);
-        }
+        //while (endID - startID > base_size) {
+        //    auto trp = randomSampling(G, midAngles, isMaximum, startID, endID, 5);
+        //    startID = get<1>(trp);
+        //    endID = get<2>(trp);
+        //}
 
-        // 남은 경우들은 다 직접 계산하고 그 중에서 가장 좋은 ID를 찾음.
-        int bestID = bruteForce(G, midAngles, startID, endID);
+        //// 남은 경우들은 다 직접 계산하고 그 중에서 가장 좋은 ID를 찾음.
+        //int bestID = bruteForce(G, midAngles, startID, endID, isMaximum);
 
-        computePerformance(G, midAngles, bestID);
+        //computePerformance(G, midAngles, bestID, isMaximum);
+
+        int bestID = simulatedAnnealing(G, midAngles, true);
+        computePerformance(G, midAngles, bestID, isMaximum);
     }
 
-    //if (ranDom) {
-    //    generateRandomPoints(G, randomNumPoints);
-    //}
-    //else {
-    //    G.addPoint(Point(0.0, 0.0));
-    //    G.addPoint(Point(1.0, 1.0));
-    //    G.addPoint(Point(1.0, -1.0));
-    //    G.addPoint(Point(-1.0, -1.0));
-    //    G.addPoint(Point(-1.0, 1.0));
-    //}
-
- 
-
-    //int totalChangeNum = 0;
-    //int changeNum = 0;
-    //double prevFactor = -1;
-    //// double curFactor = -1;
-    //double eps = 0.001;
-
-    //bool first = true;
-
-    //for (auto& midAngle : midAngles) {
-    //    if (midAngle >= end) continue;
-
-    //    totalChangeNum++;
-
-    //    computeStretchFactor(G, midAngle);
-    //    
-    //    if (prevFactor == -1) prevFactor = G.stretchFactor;
-    //    else if (abs(prevFactor - G.stretchFactor) > eps) {
-    //        prevFactor = G.stretchFactor;
-    //        changeNum++;
-    //    }
-
-    //    printf("Stretch Factor with reference angle %f: %f\n", midAngle, G.stretchFactor);
-
-    //    fout << midAngle << " " << G.stretchFactor << endl;
-
-    //    if (!G.graphPath.empty()) {
-
-    //        if (PRINT_ADJ_LIST && first) {
-    //            cout << "Adjacency List" << endl;
-    //            for (int k = 0; k < G.pointCount; k++) {
-    //                auto& row = G.bestAdjList[k];
-
-    //                for (int ii = 0; ii < G.pointCount; ii++) {
-    //                    bool exist = false;
-    //                    for (auto& jj : row) {
-    //                        if (jj.dest == ii) {
-    //                            cout << "1 ";
-    //                            exist = true;
-    //                            break;
-    //                        }
-    //                    }
-    //                    if (!exist) cout << "0 ";
-    //                }
-    //                cout << endl;
-    //            }
-    //            first = false;
-    //            // cout << endl;
-    //        }
-
-    //        cout << "Worst Pair: (" << G.graphPath[0] << ", " << G.graphPath[G.graphPath.size() - 1] << ")" << endl;
-
-    //        int i = 0;
-    //        cout << "Graph Path: ";
-    //        while (true) {
-    //            cout << G.graphPath[i] << " ";
-    //            i++;
-    //            if (i >= G.graphPath.size()) break;
-    //        }
-    //        cout << endl;
-
-    //        i = 0;
-    //        cout << "Graph Path Edge Length: ";
-    //        while (i + 1 < G.graphPath.size()) {
-    //            cout << distance(G.points[G.graphPath[i]], G.points[G.graphPath[i + 1]]) << " ";
-    //            i++;
-    //        }
-    //        cout << endl;
-
-    //        cout << "Graph Distance : " << G.graphDistance << endl;
-
-    //        cout << "Direct Distance: " << G.directDistance;
-
-    //        // cout << ", On-site Computation: " << distance(G.points[G.graphPath[0]], G.points[G.graphPath[G.graphPath.size() - 1]]) << endl;
-    //        cout << endl;
-    //    }
-
-    //    cout << endl;
-    //}
-
-    //fout.close();
-
-    //cout << "Total stretch factor changes: " << changeNum << " out of " << totalChangeNum << endl;
-
-    // computePerformance(G, midAngles, 0);
-    // computePerformance(G, midAngles, 5);
+  
 }
+
+//if (ranDom) {
+  //    generateRandomPoints(G, randomNumPoints);
+  //}
+  //else {
+  //    G.addPoint(Point(0.0, 0.0));
+  //    G.addPoint(Point(1.0, 1.0));
+  //    G.addPoint(Point(1.0, -1.0));
+  //    G.addPoint(Point(-1.0, -1.0));
+  //    G.addPoint(Point(-1.0, 1.0));
+  //}
+
+  //int totalChangeNum = 0;
+  //int changeNum = 0;
+  //double prevFactor = -1;
+  //// double curFactor = -1;
+  //double eps = 0.001;
+
+  //bool first = true;
+
+  //for (auto& midAngle : midAngles) {
+  //    if (midAngle >= end) continue;
+
+  //    totalChangeNum++;
+
+  //    computeStretchFactor(G, midAngle);
+  //    
+  //    if (prevFactor == -1) prevFactor = G.stretchFactor;
+  //    else if (abs(prevFactor - G.stretchFactor) > eps) {
+  //        prevFactor = G.stretchFactor;
+  //        changeNum++;
+  //    }
+
+  //    printf("Stretch Factor with reference angle %f: %f\n", midAngle, G.stretchFactor);
+
+  //    fout << midAngle << " " << G.stretchFactor << endl;
+
+  //    if (!G.graphPath.empty()) {
+
+  //        if (PRINT_ADJ_LIST && first) {
+  //            cout << "Adjacency List" << endl;
+  //            for (int k = 0; k < G.pointCount; k++) {
+  //                auto& row = G.bestAdjList[k];
+
+  //                for (int ii = 0; ii < G.pointCount; ii++) {
+  //                    bool exist = false;
+  //                    for (auto& jj : row) {
+  //                        if (jj.dest == ii) {
+  //                            cout << "1 ";
+  //                            exist = true;
+  //                            break;
+  //                        }
+  //                    }
+  //                    if (!exist) cout << "0 ";
+  //                }
+  //                cout << endl;
+  //            }
+  //            first = false;
+  //            // cout << endl;
+  //        }
+
+  //        cout << "Worst Pair: (" << G.graphPath[0] << ", " << G.graphPath[G.graphPath.size() - 1] << ")" << endl;
+
+  //        int i = 0;
+  //        cout << "Graph Path: ";
+  //        while (true) {
+  //            cout << G.graphPath[i] << " ";
+  //            i++;
+  //            if (i >= G.graphPath.size()) break;
+  //        }
+  //        cout << endl;
+
+  //        i = 0;
+  //        cout << "Graph Path Edge Length: ";
+  //        while (i + 1 < G.graphPath.size()) {
+  //            cout << distance(G.points[G.graphPath[i]], G.points[G.graphPath[i + 1]]) << " ";
+  //            i++;
+  //        }
+  //        cout << endl;
+
+  //        cout << "Graph Distance : " << G.graphDistance << endl;
+
+  //        cout << "Direct Distance: " << G.directDistance;
+
+  //        // cout << ", On-site Computation: " << distance(G.points[G.graphPath[0]], G.points[G.graphPath[G.graphPath.size() - 1]]) << endl;
+  //        cout << endl;
+  //    }
+
+  //    cout << endl;
+  //}
+
+  //fout.close();
+
+  //cout << "Total stretch factor changes: " << changeNum << " out of " << totalChangeNum << endl;
+
+  // computePerformance(G, midAngles, 0);
+  // computePerformance(G, midAngles, 5);

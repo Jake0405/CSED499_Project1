@@ -67,6 +67,7 @@ public:
     void addPoint(Point p);
     void print();
     void initialize();
+    void partialInitialize();
 };
 
 void YaoGraph::addPoint(Point p) {
@@ -96,6 +97,17 @@ void YaoGraph::initialize() {
     bestAdjList = {};
     graphPath = {}; 
     directDistance = -1; 
+    graphDistance = -1;
+}
+
+void YaoGraph::partialInitialize() {
+    stretchFactor = -1.0;
+    stretchFactorSum = 0.0;
+    pairCount = 0;
+    // adj_list = {};
+    // bestAdjList = {};
+    // graphPath = {};
+    directDistance = -1;
     graphDistance = -1;
 }
 
@@ -326,6 +338,9 @@ void computeStretchFactor(YaoGraph& G, double midAngle, bool isMaximum) {
 // simulated annealing 같이 할 수 있도록?
 // return type : bestID
 int simulatedAnnealing(YaoGraph& G, vector<double> midAngles, bool isMaximum) {
+
+    G.partialInitialize();
+
     bool printFlag = false;
     
     // 초기해: 아무렇게나 잡기
@@ -337,7 +352,7 @@ int simulatedAnnealing(YaoGraph& G, vector<double> midAngles, bool isMaximum) {
     int  curID = initID;
     double curSol = initSol;
 
-    int numIters = midAngles.size();
+    int numIters = midAngles.size() / 3;
     int curIter = 0;
 
     double T0 = 10;
@@ -347,7 +362,7 @@ int simulatedAnnealing(YaoGraph& G, vector<double> midAngles, bool isMaximum) {
 
     // 온도가 충분히 낮아질 때까지
     while (curIter < numIters) {
-        T *= 0.95;
+        T *= 1 - 0.05 * (double(midAngles.size()) / double(numIters));
         curIter++;
 
         if (printFlag) cout << "T: " << T << ", " << "iter: " << curIter << endl;
@@ -481,7 +496,7 @@ void generateRandomPoints(YaoGraph& G, int numPoints) {
 // 성능 계산
 // average stretch factor 계산
 // 등수, 비율 모두 계산
-void computePerformance(YaoGraph& G, vector<double> midAngles, int myID, int isMaximum) {
+int computePerformance(YaoGraph& G, vector<double> midAngles, int myID, int isMaximum) {
     cout << endl;
 
     double minStretchFactor = DBL_MAX; int minID = -1;
@@ -543,13 +558,15 @@ void computePerformance(YaoGraph& G, vector<double> midAngles, int myID, int isM
 
     cout << "Approximation Factor: " << myStretchFactor / minStretchFactor << endl;
     cout << endl;
+
+    return rank;
 }
 
 int main() {
 
     ofstream fout;
     // fout.open("C:\\Users\\hwikim\\Dropbox\\ALGOLAB\\연구참여\\신재욱학생\\points.txt");
-    fout.open("points.txt");
+    // fout.open("points.txt");
 
     // 랜덤 시드 설정
     // srand(time(NULL));
@@ -566,50 +583,136 @@ int main() {
     YaoGraph G(numCones);
     
     int randomNumPoints = 20;
-    int numIterations = 10;
+    int numIterations = 5;
+
+    clock_t start, finish;
+    double result;
+
+    vector<double> SATime;
+    vector<int> SARank;
+    vector<double> RSTime;
+    vector<int> RSRank;
+    vector<double> BFTime;
+    vector<int> BFRank;
+
+    int bestID;
+    int rank;
 
     for (int i = 0; i < numIterations; i++) {
         generateRandomPoints(G, randomNumPoints);
 
-        fout << G.pointCount << endl;
-        for (int i = 0; i < G.pointCount; i++) {
-            cout << "Point " << i << ": (" << G.points[i].x << ", " << G.points[i].y << ")" << endl;
-            fout << G.points[i].x << " " << G.points[i].y << endl;
-        }
-        cout << endl;
-        fout << endl;
+        //fout << G.pointCount << endl;
+        //for (int i = 0; i < G.pointCount; i++) {
+        //    cout << "Point " << i << ": (" << G.points[i].x << ", " << G.points[i].y << ")" << endl;
+        //    fout << G.points[i].x << " " << G.points[i].y << endl;
+        //}
+        //cout << endl;
+        //fout << endl;
 
-        fout.close();
+        //fout.close();
 
-        fout.open("C:\\Program Files\\gnuplot\\bin\\stretchFactor.txt");
+        //fout.open("C:\\Program Files\\gnuplot\\bin\\stretchFactor.txt");
 
         double start = 0.0; double end = 360.0 / double(G.coneCount);
         vector<double> midAngles = computeMidAngles(G, start, end);
 
-        //// 나누는 개수(t)보다는 base_size가 더 커야 함.
-        //int t = 5;
-        //int base_size = 10;
-        //// int base_size = 3;
+        start = clock();
 
-        //int startID = 0;
-        //int endID = midAngles.size() - 1;
+        bestID = bruteForce(G, midAngles, 0, midAngles.size()-1, isMaximum);
 
-        //while (endID - startID > base_size) {
-        //    auto trp = randomSampling(G, midAngles, isMaximum, startID, endID, 5);
-        //    startID = get<1>(trp);
-        //    endID = get<2>(trp);
-        //}
+        end = clock();
 
-        //// 남은 경우들은 다 직접 계산하고 그 중에서 가장 좋은 ID를 찾음.
-        //int bestID = bruteForce(G, midAngles, startID, endID, isMaximum);
+        rank = computePerformance(G, midAngles, bestID, isMaximum);
 
-        //computePerformance(G, midAngles, bestID, isMaximum);
+        result = (double)(end - start);
 
-        int bestID = simulatedAnnealing(G, midAngles, true);
-        computePerformance(G, midAngles, bestID, isMaximum);
+        cout << "time taken: " << result / CLOCKS_PER_SEC << "second" << endl;
+
+        BFTime.push_back(result);
+        BFRank.push_back(rank);
+
+        start = clock();
+
+        // 나누는 개수(t)보다는 base_size가 더 커야 함.
+        int t = 5;
+        int base_size = 10;
+        // int base_size = 3;
+
+        int startID = 0;
+        int endID = midAngles.size() - 1;
+
+        while (endID - startID > base_size) {
+            auto trp = randomSampling(G, midAngles, isMaximum, startID, endID, 5);
+            startID = get<1>(trp);
+            endID = get<2>(trp);
+        }
+
+        // 남은 경우들은 다 직접 계산하고 그 중에서 가장 좋은 ID를 찾음.
+        bestID = bruteForce(G, midAngles, startID, endID, isMaximum);
+
+        end = clock();
+
+        rank = computePerformance(G, midAngles, bestID, isMaximum);
+
+        result = (double)(end - start);
+
+        cout << "time taken: " << result / CLOCKS_PER_SEC << "second" << endl;
+
+        RSTime.push_back(result);
+        RSRank.push_back(rank);
+
+        start = clock();
+
+        bestID = simulatedAnnealing(G, midAngles, true);
+
+        end = clock();
+
+        rank = computePerformance(G, midAngles, bestID, isMaximum);
+
+		result = (double)(end-start);
+
+		cout << "time taken: " << result / CLOCKS_PER_SEC << "second" << endl;
+
+        SATime.push_back(result);
+        SARank.push_back(rank);
     }
 
-  
+    fout.open("C:\\Users\\hwikim\\Desktop\\result.txt");
+
+    double BFavgTime = 0;
+    for (auto t : BFTime) {
+        fout << t / 1000 << " ";
+        BFavgTime += t / 1000;
+    }
+    fout << endl;
+    fout << BFavgTime / numIterations << endl;
+
+    for (auto t : BFRank) fout << t << " ";
+    fout << endl;
+
+    double RSavgTime = 0;
+    for (auto t : RSTime) {
+        fout << t / 1000 << " ";
+        RSavgTime += t / 1000;
+    }
+    fout << endl;
+    fout << RSavgTime / numIterations << endl;
+
+    for (auto t : RSRank) fout << t << " ";
+    fout << endl;
+
+    double SAavgTime = 0;
+    for (auto t : SATime) {
+        fout << t / 1000 << " ";
+        SAavgTime += t / 1000;
+    }
+    fout << endl;
+    fout << SAavgTime / numIterations << endl;
+
+    for (auto t : SARank) fout << t << " ";
+    fout << endl;
+
+    fout.close();
 }
 
 //if (ranDom) {
